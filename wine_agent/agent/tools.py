@@ -6,7 +6,7 @@ real data lookups during its reasoning loop.
 from typing import Any
 import logging
 
-from wine_agent.scrapers import wine_searcher, vivino, winery
+from wine_agent.scrapers import wine_searcher, vivino, winery, critics
 from wine_agent.processors import calculator, sentiment
 from wine_agent.config.settings import config
 from wine_agent.models.wine import CriticScore
@@ -81,6 +81,23 @@ TOOL_DEFINITIONS = [
         },
     },
     {
+        "name": "fetch_critic_scores",
+        "description": (
+            "Fetch REAL professional critic scores from Vivino (aggregates Wine Advocate, "
+            "Wine Spectator, Decanter, James Suckling, Wine Enthusiast), CellarTracker, "
+            "and Decanter direct search. Always call this instead of guessing scores."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "wine_name": {"type": "string", "description": "Full wine name"},
+                "vintage": {"type": "integer", "description": "Vintage year"},
+                "vivino_wine_id": {"type": "integer", "description": "Vivino wine ID if already known"},
+            },
+            "required": ["wine_name"],
+        },
+    },
+    {
         "name": "lookup_vintage_report",
         "description": (
             "Generate a vintage quality report for a given appellation and year, "
@@ -116,8 +133,10 @@ def execute_tool(tool_name: str, tool_input: dict[str, Any]) -> Any:
     if tool_name == "calculate_bc_landed_cost":
         return _tool_landed_cost(tool_input)
 
+    if tool_name == "fetch_critic_scores":
+        return _tool_critic_scores(tool_input)
+
     if tool_name == "lookup_vintage_report":
-        # This tool is handled inline by the LLM — no external data source needed
         return {"status": "handled_by_llm"}
 
     return {"error": f"Unknown tool: {tool_name}"}
@@ -170,6 +189,31 @@ def _tool_winery(inp: dict) -> dict:
         "oak_aging_months": cls.oak_aging_months,
         "alcohol_pct": cls.alcohol_pct,
         "vintage_rating": cls.vintage_rating,
+    }
+
+
+def _tool_critic_scores(inp: dict) -> dict:
+    scores = critics.fetch_all_critic_scores(
+        wine_name=inp["wine_name"],
+        vintage=inp.get("vintage"),
+        vivino_wine_id=inp.get("vivino_wine_id"),
+    )
+    if not scores:
+        return {"status": "not_found", "scores": []}
+
+    return {
+        "scores": [
+            {
+                "critic": s.critic,
+                "score": s.score,
+                "score_max": s.score_max,
+                "tasting_note": s.tasting_note[:200] if s.tasting_note else "",
+                "review_date": s.review_date,
+            }
+            for s in scores
+        ],
+        "count": len(scores),
+        "sources": list({s.critic for s in scores}),
     }
 
 

@@ -200,6 +200,18 @@ def _populate_report_from_cache(
             vintage_year=report.vintage,
         )
 
+    if "fetch_critic_scores" in cache:
+        cd = cache["fetch_critic_scores"]
+        for s in cd.get("scores", []):
+            if s.get("score") is not None:
+                report.critic_scores.append(CriticScore(
+                    critic=s["critic"],
+                    score=s["score"],
+                    score_max=s.get("score_max", 100.0),
+                    tasting_note=s.get("tasting_note", ""),
+                    review_date=str(s.get("review_date", "")),
+                ))
+
     if "calculate_bc_landed_cost" in cache:
         lc = cache["calculate_bc_landed_cost"]
         report.landed_cost = LandedCostBreakdown(
